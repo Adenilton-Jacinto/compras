@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Minhas Compras</title>
+  <!-- Dexie.js para gerenciamento do IndexedDB -->
+  <script src="https://unpkg.com/dexie@latest/dist/dexie.js"></script>
+  <!-- Html5-QRCode para Leitura de Código de Barras -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  
+  <style>
+    :root {
+      --bg-color: #f4f6f9;
+      --card-bg: #ffffff;
+      --text-color: #333333;
+      --subtext-color: #666666;
+      --border-color: #eeeeee;
+      --header-bg: #2c3e50;
+      --month-bg: #eef2f7;
+      --form-bg: #fafafa;
+      --chip-bg: #e0e0e0;
+      --chip-text: #555555;
+    }
+
+    body.dark-theme {
+      --bg-color: #121212;
+      --card-bg: #1e1e1e;
+      --text-color: #e0e0e0;
+      --subtext-color: #aaa;
+      --border-color: #333333;
+      --header-bg: #1a252f;
+      --month-bg: #2a2a2a;
+      --form-bg: #242424;
+      --chip-bg: #333333;
+      --chip-text: #ccc;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; transition: background-color 0.2s, color 0.2s; }
+    body { background-color: var(--bg-color); color: var(--text-color); padding-top: 60px; display: flex; justify-content: center; }
+
+    /* Header Superior */
+    .top-bar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 56px;
+      background: var(--header-bg);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+      z-index: 900;
+    }
+
+    .top-bar-left {
+      display: flex;
+      align-items: center;
+    }
+
+    .menu-btn, .theme-toggle-btn {
+      background: transparent;
+      border: none;
+      color: white;
+      font-size: 1.3rem;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 6px;
+    }
+
+    .menu-btn { margin-right: 15px; font-size: 1.5rem; }
+
+    .app-title {
+      font-size: 1.1rem;
+      font-weight: bold;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Menu Lateral (Drawer) */
+    .drawer-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.5);
+      z-index: 1000;
+      display: none;
+    }
+
+    .drawer {
+      position: fixed;
+      top: 0;
+      left: -280px;
+      width: 280px;
+      height: 100%;
+      background: var(--card-bg);
+      z-index: 1001;
+      transition: left 0.3s ease;
+      box-shadow: 2px 0 12px rgba(0,0,0,0.2);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .drawer.open { left: 0; }
+    .drawer-overlay.open { display: block; }
+
+    .drawer-header {
+      background: var(--header-bg);
+      color: white;
+      padding: 20px 16px;
+      font-size: 1.2rem;
+      font-weight: bold;
+    }
+
+    .drawer-menu {
+      list-style: none;
+      padding: 10px 0;
+    }
+
+    .drawer-item {
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-color);
+      cursor: pointer;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .drawer-item:hover, .drawer-item.active {
+      background: var(--month-bg);
+      color: #2980b9;
+    }
+
+    .drawer-divider {
+      height: 1px;
+      background: var(--border-color);
+      margin: 8px 0;
+    }
+
+    /* Layout Principal */
+    .container { width: 100%; max-width: 650px; background: var(--card-bg); padding: 16px; border-radius: 12px; margin: 10px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08); overflow: hidden; }
+    .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; }
+    h2 { font-size: 1.3rem; color: var(--text-color); }
+
+    /* Seção do Mês */
+    .month-selector-card { background: var(--month-bg); padding: 14px; border-radius: 8px; margin-bottom: 16px; }
+    .month-controls { display: flex; gap: 10px; margin-bottom: 10px; }
+    select, input[type="text"], input[type="number"], input[type="file"] { 
+      width: 100%;
+      max-width: 100%;
+      padding: 10px; 
+      border: 1px solid var(--border-color); 
+      border-radius: 6px; 
+      font-size: 0.95rem; 
+      background: var(--card-bg); 
+      color: var(--text-color); 
+    }
+    select { flex: 1; font-weight: bold; }
+    .btn { padding: 10px 14px; background: #2980b9; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; white-space: nowrap; }
+    .btn-scanner { background: #8e44ad; width: 100%; padding: 12px; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; margin-bottom: 16px; }
+
+    /* Resumo Financeiro */
+    .summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; background: var(--card-bg); padding: 12px; border-radius: 6px; border: 1px solid var(--border-color); text-align: center; }
+    .summary-item label { font-size: 0.75rem; color: var(--subtext-color); display: block; }
+    .summary-item span { font-size: 1.1rem; font-weight: bold; }
+    .total-spent { color: #27ae60; }
+    .total-all { color: #2980b9; }
+
+    /* Formulário Responsivo */
+    form { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; background: var(--form-bg); padding: 14px; border-radius: 8px; border: 1px solid var(--border-color); }
+    .form-row { display: flex; gap: 10px; width: 100%; }
+    .form-group { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+    .form-group label { font-size: 0.8rem; color: var(--subtext-color); margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; white-space: nowrap; }
+    .btn-manage-cats { background: transparent; border: none; color: #2980b9; font-size: 0.75rem; font-weight: bold; cursor: pointer; text-decoration: underline; }
+    .btn-add { padding: 12px; background: #27ae60; color: white; border: none; border-radius: 6px; font-size: 1rem; font-weight: bold; cursor: pointer; margin-top: 4px; }
+
+    /* Modal Genérico */
+    .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center; flex-direction: column; padding: 20px; }
+    .modal-card { background: var(--card-bg); width: 100%; max-width: 450px; padding: 20px; border-radius: 10px; max-height: 80vh; overflow-y: auto; }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+    .modal-header h3 { font-size: 1.1rem; color: var(--text-color); }
+    .btn-close-modal { background: transparent; border: none; font-size: 1.2rem; cursor: pointer; color: var(--subtext-color); }
+    
+    .cat-manage-list { list-style: none; margin-top: 15px; }
+    .cat-manage-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 6px; margin-bottom: 6px; background: var(--form-bg); }
+
+    /* Leitor de Câmera Modal */
+    #reader { width: 100%; max-width: 400px; background: var(--card-bg); border-radius: 8px; overflow: hidden; }
+    .btn-close-scanner { margin-top: 15px; padding: 10px 20px; background: #e74c3c; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
+
+    /* Filtros por Categoria */
+    .category-filters { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 14px; scrollbar-width: thin; }
+    .filter-chip { padding: 6px 12px; border-radius: 20px; background: var(--chip-bg); font-size: 0.8rem; border: none; cursor: pointer; white-space: nowrap; font-weight: 600; color: var(--chip-text); }
+    .filter-chip.active { background: #2980b9; color: #fff; }
+
+    /* Lista */
+    .item-list { list-style: none; }
+    .item-card { display: flex; align-items: center; justify-content: space-between; padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; margin-bottom: 8px; background: var(--card-bg); }
+    .item-card.purchased { background-color: var(--form-bg); opacity: 0.65; }
+    .item-card.purchased .item-name { text-decoration: line-through; }
+    .item-left { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
+    .item-img { width: 45px; height: 45px; object-fit: cover; border-radius: 6px; background: var(--chip-bg); flex-shrink: 0; }
+    .item-info { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+    .item-name { font-weight: bold; font-size: 0.95rem; color: var(--text-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .item-details { font-size: 0.8rem; color: var(--subtext-color); }
+    .category-badge { display: inline-block; font-size: 0.7rem; background: var(--chip-bg); padding: 2px 6px; border-radius: 4px; margin-top: 2px; width: fit-content; color: var(--chip-text); }
+    .item-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+    .item-total { font-weight: bold; color: var(--text-color); font-size: 0.95rem; }
+    .btn-delete { background: transparent; border: none; color: #e74c3c; font-size: 1.1rem; cursor: pointer; padding: 4px; border-radius: 4px; }
+    .btn-delete:hover { background: #fadbd8; }
+    .empty-msg { text-align: center; color: var(--subtext-color); padding: 20px 0; }
+  </style>
+</head>
+<body>
+
+  <!-- Top Bar Superior -->
+  <header class="top-bar">
+    <div class="top-bar-left">
+      <button class="menu-btn" onclick="toggleDrawer()">☰</button>
+      <div class="app-title">🛍️ Minhas Compras</div>
+    </div>
+    <button class="theme-toggle-btn" id="themeToggleBtn" onclick="toggleTheme()" title="Alternar Modo Escuro">🌙</button>
+  </header>
+
+  <!-- Overlay e Menu Lateral -->
+  <div class="drawer-overlay" id="drawerOverlay" onclick="toggleDrawer()"></div>
+  <aside class="drawer" id="drawer">
+    <div class="drawer-header">Listas de Compras</div>
+    <ul class="drawer-menu" id="drawerMenuList">
+      <li class="drawer-item active" data-key="Mercado" data-title="🛒 Mercado">
+        <span>🛒 Mercado</span>
+      </li>
+      <li class="drawer-item" data-key="Farmacia" data-title="💊 Farmácia">
+        <span>💊 Farmácia</span>
+      </li>
+      <li class="drawer-item" data-key="Pets" data-title="🐾 Pets">
+        <span>🐾 Pets</span>
+      </li>
+      <div class="drawer-divider"></div>
+      <li class="drawer-item" onclick="addNewTab()">➕ Adicionar Nova Lista</li>
+    </ul>
+  </aside>
+
+  <div class="container">
+    <div class="section-header">
+      <h2 id="currentTabTitle">🛒 Mercado</h2>
+    </div>
+
+    <!-- Seleção de Mês e Histórico -->
+    <div class="month-selector-card">
+      <div class="month-controls">
+        <select id="monthSelect" onchange="changeMonth()"></select>
+        <button class="btn" onclick="createNewMonth()" title="Adicionar novo mês">+ Novo Mês</button>
+      </div>
+
+      <div class="summary-grid">
+        <div class="summary-item">
+          <label>Total Já Comprado</label>
+          <span class="total-spent" id="totalSpent">R$ 0,00</span>
+        </div>
+        <div class="summary-item">
+          <label>Estimativa da Lista</label>
+          <span class="total-all" id="totalAll">R$ 0,00</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Botão de Scanner -->
+    <button type="button" class="btn-scanner" onclick="startScanner()">📷 Escanear Código de Barras</button>
+
+    <!-- Formulário de Produto -->
+    <form id="itemForm">
+      <div class="form-group">
+        <label for="itemName">Produto</label>
+        <input type="text" id="itemName" placeholder="Ex: Queijo Muçarela ou Remédio" required>
+        <input type="hidden" id="itemBarcode" value="">
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="itemCategory">
+            Setor
+            <button type="button" class="btn-manage-cats" onclick="openCategoryModal()">⚙️ Gerenciar</button>
+          </label>
+          <select id="itemCategory" required></select>
+        </div>
+
+        <div class="form-group">
+          <label for="itemQty">Qtd / Peso</label>
+          <input type="number" id="itemQty" value="1" min="0.001" step="0.001" required placeholder="Ex: 0.5 (500g)">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="itemPrice">Preço (Unid. ou por Kg R$)</label>
+        <input type="number" id="itemPrice" placeholder="0,00" min="0" step="0.01" required>
+      </div>
+
+      <div class="form-group">
+        <label for="itemImage">Foto do Produto (Opcional)</label>
+        <input type="file" id="itemImage" accept="image/*" capture="environment">
+      </div>
+
+      <button type="submit" class="btn-add">+ Adicionar Produto</button>
+    </form>
+
+    <!-- Filtros de Categoria -->
+    <div class="category-filters" id="categoryFilters"></div>
+
+    <!-- Lista -->
+    <ul class="item-list" id="itemList"></ul>
+  </div>
+
+  <!-- Modal do Leitor de Câmera -->
+  <div id="scannerModal" class="modal">
+    <div id="reader"></div>
+    <button class="btn-close-scanner" onclick="stopScanner()">Cancelar Leitura</button>
+  </div>
+
+  <!-- Modal de Gerenciamento de Categorias -->
+  <div id="categoryModal" class="modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="modalCatTitle">⚙️ Setores dessa Aba</h3>
+        <button class="btn-close-modal" onclick="closeCategoryModal()">✖</button>
+      </div>
+      <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+        <input type="text" id="newCatEmoji" placeholder="Emoji" style="width: 70px; text-align: center;" value="📌">
+        <input type="text" id="newCatName" placeholder="Nome do setor" style="flex: 1;">
+        <button class="btn" onclick="addCategory()">+ Add</button>
+      </div>
+      <ul class="cat-manage-list" id="catManageList"></ul>
+    </div>
+  </div>
+
+  <script>
+    const db = new Dexie("ComprasDB");
+    db.version(6).stores({
+      meses: '++id, nome, dataCriacao',
+      produtos: '++id, mesId, secao, nome, categoria, comprado, codigoBarras',
+      categorias: '++id, secao, nome, emoji'
+    });
+
+    let currentMonthId = null;
+    let currentTab = 'Mercado';
+    let selectedCategoryFilter = 'Todos';
+    let html5QrCode = null;
+
+    const defaultCategoriasPorSecao = {
+      'Mercado': [
+        { nome: 'Mercearia', emoji: '📦' },
+        { nome: 'Hortifrúti', emoji: '🥬' },
+        { nome: 'Açougue', emoji: '🥩' },
+        { nome: 'Laticínios', emoji: '🧀' },
+        { nome: 'Padaria', emoji: '🍞' },
+        { nome: 'Limpeza', emoji: '🧹' },
+        { nome: 'Higiene', emoji: '🧴' },
+        { nome: 'Bebidas', emoji: '🥤' },
+        { nome: 'Outros', emoji: '📌' }
+      ],
+      'Farmacia': [
+        { nome: 'Medicamentos', emoji: '💊' },
+        { nome: 'Higiene Pessoal', emoji: '🧴' },
+        { nome: 'Primeiros Socorros', emoji: '🩹' },
+        { nome: 'Suplementos', emoji: '🏋️' },
+        { nome: 'Outros', emoji: '📌' }
+      ],
+      'Pets': [
+        { nome: 'Ração', emoji: '🦴' },
+        { nome: 'Petiscos', emoji: '🥩' },
+        { nome: 'Higiene & Banho', emoji: '🧼' },
+        { nome: 'Brinquedos', emoji: '🎾' },
+        { nome: 'Acessórios', emoji: '🦮' },
+        { nome: 'Medicamentos Pet', emoji: '💊' },
+        { nome: 'Outros', emoji: '📌' }
+      ]
+    };
+
+    /* --- Suporte ao Modo Escuro --- */
+    function initTheme() {
+      const savedTheme = localStorage.getItem('theme');
+      if (savedTheme === 'dark') {
+        document.body.classList.add('dark-theme');
+        document.getElementById('themeToggleBtn').innerText = '☀️';
+      }
+    }
+
+    function toggleTheme() {
+      const isDark = document.body.classList.toggle('dark-theme');
+      document.getElementById('themeToggleBtn').innerText = isDark ? '☀️' : '🌙';
+      localStorage.setItem('theme', isDark ? 'dark' : 'light');
+    }
+
+    async function initApp() {
+      initTheme();
+
+      let catCount = await db.categorias.count();
+      if (catCount === 0) {
+        for (const secao in defaultCategoriasPorSecao) {
+          const catList = defaultCategoriasPorSecao[secao].map(c => ({
+            secao: secao,
+            nome: c.nome,
+            emoji: c.emoji
+          }));
+          await db.categorias.bulkAdd(catList);
+        }
+      }
+
+      let meses = await db.meses.toArray();
+      if (meses.length === 0) {
+        const dataAtual = new Date();
+        const nomeMesAtual = dataAtual.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+        const id = await db.meses.add({
+          nome: nomeMesAtual.charAt(0).toUpperCase() + nomeMesAtual.slice(1),
+          dataCriacao: new Date().toISOString()
+        });
+        currentMonthId = id;
+      } else {
+        currentMonthId = meses[meses.length - 1].id;
+      }
+
+      setupDrawerLongPress();
+      await loadCategories();
+      await loadMonthSelect();
+      await renderItems();
+    }
+
+    /* --- Eventos de Pressionar e Segurar (Touch & Hold) / Botão Direito --- */
+    function setupDrawerLongPress() {
+      const items = document.querySelectorAll('#drawerMenuList .drawer-item');
+      items.forEach(item => {
+        if (!item.dataset.key) return;
+
+        let pressTimer;
+
+        item.addEventListener('touchstart', (e) => {
+          pressTimer = window.setTimeout(() => {
+            confirmRemoveTab(item.dataset.key, item.dataset.title, item);
+          }, 600);
+        }, { passive: true });
+
+        item.addEventListener('touchend', () => clearTimeout(pressTimer));
+        item.addEventListener('touchmove', () => clearTimeout(pressTimer));
+
+        item.onclick = (e) => {
+          switchTab(item.dataset.key, item.dataset.title);
+        };
+
+        item.oncontextmenu = (e) => {
+          e.preventDefault();
+          confirmRemoveTab(item.dataset.key, item.dataset.title, item);
+        };
+      });
+    }
+
+    async function confirmRemoveTab(tabKey, tabTitle, element) {
+      if (tabKey === 'Mercado') {
+        alert("A aba principal 'Mercado' não pode ser removida.");
+        return;
+      }
+
+      const confirmDelete = confirm(`Deseja remover a aba "${tabTitle}" e todos os produtos salvos nela?`);
+      if (confirmDelete) {
+        await db.produtos.where('secao').equals(tabKey).delete();
+        await db.categorias.where('secao').equals(tabKey).delete();
+
+        if (currentTab === tabKey) {
+          switchTab('Mercado', '🛒 Mercado');
+        }
+
+        element.remove();
+      }
+    }
+
+    /* --- Carregar e Renderizar Categorias --- */
+    async function loadCategories() {
+      let dbCats = await db.categorias.where('secao').equals(currentTab).toArray();
+      
+      if (dbCats.length === 0) {
+        const catPadrao = defaultCategoriasPorSecao[currentTab] || [{ nome: 'Outros', emoji: '📌' }];
+        const catList = catPadrao.map(c => ({ secao: currentTab, nome: c.nome, emoji: c.emoji }));
+        await db.categorias.bulkAdd(catList);
+        dbCats = await db.categorias.where('secao').equals(currentTab).toArray();
+      }
+
+      const select = document.getElementById('itemCategory');
+      select.innerHTML = '';
+
+      dbCats.forEach(cat => {
+        const opt = document.createElement('option');
+        opt.value = cat.nome;
+        opt.innerText = `${cat.emoji} ${cat.nome}`;
+        select.appendChild(opt);
+      });
+
+      renderCategoryFilters(dbCats);
+      renderCategoryManageList(dbCats);
+    }
+
+    function renderCategoryFilters(dbCats) {
+      const filterContainer = document.getElementById('categoryFilters');
+      filterContainer.innerHTML = '';
+
+      const allBtn = document.createElement('button');
+      allBtn.className = 'filter-chip' + (selectedCategoryFilter === 'Todos' ? ' active' : '');
+      allBtn.textContent = 'Todos';
+      allBtn.onclick = () => {
+        selectedCategoryFilter = 'Todos';
+        renderCategoryFilters(dbCats);
+        renderItems();
+      };
+      filterContainer.appendChild(allBtn);
+
+      dbCats.forEach(cat => {
+        const btn = document.createElement('button');
+        btn.className = 'filter-chip' + (cat.nome === selectedCategoryFilter ? ' active' : '');
+        btn.textContent = `${cat.emoji} ${cat.nome}`;
+        btn.onclick = () => {
+          selectedCategoryFilter = cat.nome;
+          renderCategoryFilters(dbCats);
+          renderItems();
+        };
+        filterContainer.appendChild(btn);
+      });
+    }
+
+    function renderCategoryManageList(dbCats) {
+      const ul = document.getElementById('catManageList');
+      ul.innerHTML = '';
+
+      dbCats.forEach(cat => {
+        const li = document.createElement('li');
+        li.className = 'cat-manage-item';
+        li.innerHTML = `
+          <span>${cat.emoji} ${cat.nome}</span>
+          <button class="btn-delete" onclick="deleteCategory(${cat.id})" title="Excluir Setor">🗑️</button>
+        `;
+        ul.appendChild(li);
+      });
+    }
+
+    /* --- Modal de Gerenciamento de Setores --- */
+    function openCategoryModal() {
+      document.getElementById('modalCatTitle').innerText = `⚙️ Setores de: ${currentTab}`;
+      document.getElementById('categoryModal').style.display = 'flex';
+    }
+
+    function closeCategoryModal() {
+      document.getElementById('categoryModal').style.display = 'none';
+    }
+
+    async function addCategory() {
+      const name = document.getElementById('newCatName').value.trim();
+      const emoji = document.getElementById('newCatEmoji').value.trim() || '📌';
+
+      if (!name) return alert("Digite o nome da categoria!");
+
+      await db.categorias.add({
+        secao: currentTab,
+        nome: name,
+        emoji: emoji
+      });
+
+      document.getElementById('newCatName').value = '';
+      await loadCategories();
+    }
+
+    async function deleteCategory(id) {
+      if (!confirm("Tem certeza que deseja excluir esta categoria deste setor?")) return;
+      await db.categorias.delete(id);
+      await loadCategories();
+    }
+
+    /* --- Drawer Menu --- */
+    function toggleDrawer() {
+      document.getElementById('drawer').classList.toggle('open');
+      document.getElementById('drawerOverlay').classList.toggle('open');
+    }
+
+    async function switchTab(tabKey, tabTitle) {
+      currentTab = tabKey;
+      selectedCategoryFilter = 'Todos';
+      document.getElementById('currentTabTitle').innerText = tabTitle;
+      
+      const items = document.querySelectorAll('.drawer-item');
+      items.forEach(item => {
+        if (item.dataset.key === tabKey) {
+          item.classList.add('active');
+        } else {
+          item.classList.remove('active');
+        }
+      });
+
+      toggleDrawer();
+      await loadCategories();
+      await renderItems();
+    }
+
+    async function addNewTab() {
+      const name = prompt("Digite o nome da nova lista/área (ex: Ferramentas, Casa):");
+      if (!name || !name.trim()) return;
+
+      const key = name.trim();
+      const title = "📌 " + name.trim();
+
+      const ul = document.getElementById('drawerMenuList');
+      const divider = ul.querySelector('.drawer-divider');
+
+      const li = document.createElement('li');
+      li.className = 'drawer-item';
+      li.dataset.key = key;
+      li.dataset.title = title;
+      li.innerHTML = `<span>${title}</span>`;
+
+      ul.insertBefore(li, divider);
+      setupDrawerLongPress();
+      await switchTab(key, title);
+    }
+
+    /* --- Leitor de Câmera --- */
+    function startScanner() {
+      document.getElementById('scannerModal').style.display = 'flex';
+      html5QrCode = new Html5Qrcode("reader");
+
+      const config = { fps: 10, qrbox: { width: 250, height: 150 } };
+
+      html5QrCode.start(
+        { facingMode: "environment" }, 
+        config, 
+        onScanSuccess
+      ).catch(err => {
+        alert("Erro ao acessar a câmera: " + err);
+        stopScanner();
+      });
+    }
+
+    async function onScanSuccess(decodedText) {
+      stopScanner();
+      document.getElementById('itemBarcode').value = decodedText;
+
+      const produtoAnterior = await db.produtos.where('codigoBarras').equals(decodedText).last();
+
+      if (produtoAnterior) {
+        document.getElementById('itemName').value = produtoAnterior.nome;
+        document.getElementById('itemCategory').value = produtoAnterior.categoria || 'Outros';
+        document.getElementById('itemPrice').value = produtoAnterior.precoUnitario;
+        alert(`Produto encontrado no histórico: "${produtoAnterior.nome}"`);
+      } else {
+        document.getElementById('itemName').value = "Prod. " + decodedText;
+        alert(`Código de barras lido: ${decodedText}`);
+      }
+    }
+
+    function stopScanner() {
+      if (html5QrCode) {
+        html5QrCode.stop().then(() => {
+          document.getElementById('scannerModal').style.display = 'none';
+        }).catch(() => {
+          document.getElementById('scannerModal').style.display = 'none';
+        });
+      } else {
+        document.getElementById('scannerModal').style.display = 'none';
+      }
+    }
+
+    /* --- Histórico de Meses & Itens --- */
+    async function loadMonthSelect() {
+      const select = document.getElementById('monthSelect');
+      select.innerHTML = '';
+      const meses = await db.meses.orderBy('dataCriacao').toArray();
+
+      meses.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.innerText = m.nome;
+        if (m.id === currentMonthId) opt.selected = true;
+        select.appendChild(opt);
+      });
+    }
+
+    async function createNewMonth() {
+      const nomeMes = prompt("Digite o nome da nova lista/mês (ex: Outubro / 2026):");
+      if (!nomeMes || !nomeMes.trim()) return;
+
+      const id = await db.meses.add({
+        nome: nomeMes.trim(),
+        dataCriacao: new Date().toISOString()
+      });
+
+      currentMonthId = id;
+      await loadMonthSelect();
+      await renderItems();
+    }
+
+    async function changeMonth() {
+      const select = document.getElementById('monthSelect');
+      currentMonthId = parseInt(select.value);
+      await renderItems();
+    }
+
+    function getBase64(file) {
+      return new Promise((resolve) => {
+        if (!file) resolve(null);
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => resolve(null);
+      });
+    }
+
+    document.getElementById('itemForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const name = document.getElementById('itemName').value.trim();
+      const category = document.getElementById('itemCategory').value;
+      const qtyStr = document.getElementById('itemQty').value;
+      const priceStr = document.getElementById('itemPrice').value;
+      const barcode = document.getElementById('itemBarcode').value;
+      const imageInput = document.getElementById('itemImage');
+
+      const qty = parseFloat(qtyStr.replace(',', '.')) || 0;
+      const price = parseFloat(priceStr.replace(',', '.')) || 0;
+
+      let imageBase64 = null;
+      if (imageInput.files.length > 0) {
+        imageBase64 = await getBase64(imageInput.files[0]);
+      }
+
+      await db.produtos.add({
+        mesId: currentMonthId,
+        secao: currentTab,
+        nome: name,
+        categoria: category,
+        quantidade: qty,
+        precoUnitario: price,
+        comprado: 0,
+        codigoBarras: barcode,
+        foto: imageBase64
+      });
+
+      document.getElementById('itemForm').reset();
+      document.getElementById('itemBarcode').value = '';
+      document.getElementById('itemQty').value = 1;
+      await renderItems();
+    });
+
+    async function togglePurchased(id, currentStatus) {
+      await db.produtos.update(id, { comprado: currentStatus ? 0 : 1 });
+      await renderItems();
+    }
+
+    async function deleteItem(id) {
+      if (!confirm("Tem certeza que deseja excluir este item?")) return;
+      await db.produtos.delete(id);
+      await renderItems();
+    }
+
+    function formatMoney(value) {
+      return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    }
+
+    function formatQuantityDetails(qty, price) {
+      if (qty < 1) {
+        const gramas = Math.round(qty * 1000);
+        return `${gramas}g x ${formatMoney(price)}/kg`;
+      } else if (qty % 1 !== 0) {
+        return `${qty}kg x ${formatMoney(price)}/kg`;
+      } else {
+        return `${qty}x ${formatMoney(price)}`;
+      }
+    }
+
+    async function renderItems() {
+      const itemList = document.getElementById('itemList');
+      itemList.innerHTML = '';
+
+      if (!currentMonthId) return;
+
+      let produtos = await db.produtos
+        .where('mesId').equals(currentMonthId)
+        .filter(p => (p.secao || 'Mercado') === currentTab)
+        .toArray();
+
+      let totalSpent = 0;
+      let totalAll = 0;
+      produtos.forEach(item => {
+        const itemQty = parseFloat(item.quantidade) || 0;
+        const itemPrice = parseFloat(item.precoUnitario) || 0;
+        const itemTotal = itemQty * itemPrice;
+        totalAll += itemTotal;
+        if (item.comprado) totalSpent += itemTotal;
+      });
+
+      document.getElementById('totalSpent').innerText = formatMoney(totalSpent);
+      document.getElementById('totalAll').innerText = formatMoney(totalAll);
+
+      if (selectedCategoryFilter !== 'Todos') {
+        produtos = produtos.filter(p => (p.categoria || 'Outros') === selectedCategoryFilter);
+      }
+
+      if (produtos.length === 0) {
+        itemList.innerHTML = `<li class="empty-msg">Nenhum produto cadastrado na lista de ${currentTab}.</li>`;
+        return;
+      }
+
+      produtos.sort((a, b) => a.comprado - b.comprado);
+
+      produtos.forEach(item => {
+        const itemQty = parseFloat(item.quantidade) || 0;
+        const itemPrice = parseFloat(item.precoUnitario) || 0;
+        const itemTotal = itemQty * itemPrice;
+
+        const li = document.createElement('li');
+        li.className = 'item-card' + (item.comprado ? ' purchased' : '');
+
+        const itemLeft = document.createElement('div');
+        itemLeft.className = 'item-left';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = !!item.comprado;
+        checkbox.onchange = () => togglePurchased(item.id, item.comprado);
+
+        const img = document.createElement('img');
+        img.className = 'item-img';
+        img.alt = item.nome || 'Produto';
+        img.src = item.foto || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="45" height="45" viewBox="0 0 24 24" fill="%23ccc"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>';
+
+        const itemInfo = document.createElement('div');
+        itemInfo.className = 'item-info';
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'item-name';
+        nameSpan.textContent = item.nome;
+
+        const detailsSpan = document.createElement('span');
+        detailsSpan.className = 'item-details';
+        detailsSpan.textContent = formatQuantityDetails(itemQty, itemPrice);
+
+        const catBadge = document.createElement('span');
+        catBadge.className = 'category-badge';
+        catBadge.textContent = item.categoria || 'Outros';
+
+        itemInfo.appendChild(nameSpan);
+        itemInfo.appendChild(detailsSpan);
+        itemInfo.appendChild(catBadge);
+
+        itemLeft.appendChild(checkbox);
+        itemLeft.appendChild(img);
+        itemLeft.appendChild(itemInfo);
+
+        const itemRight = document.createElement('div');
+        itemRight.className = 'item-right';
+
+        const totalSpan = document.createElement('span');
+        totalSpan.className = 'item-total';
+        totalSpan.textContent = formatMoney(itemTotal);
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'btn-delete';
+        delBtn.title = 'Excluir';
+        delBtn.textContent = '🗑️';
+        delBtn.onclick = () => deleteItem(item.id);
+
+        itemRight.appendChild(totalSpan);
+        itemRight.appendChild(delBtn);
+
+        li.appendChild(itemLeft);
+        li.appendChild(itemRight);
+
+        itemList.appendChild(li);
+      });
+    }
+
+    initApp();
+  </script>
+</body>
+</html>
